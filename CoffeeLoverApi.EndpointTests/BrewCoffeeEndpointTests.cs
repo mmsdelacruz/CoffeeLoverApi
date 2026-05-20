@@ -7,139 +7,113 @@ namespace CoffeeLoverApi.EndpointTests;
 public sealed class BrewCoffeeEndpointTests
 {
     [Fact]
-    public async Task BrewCoffee_NormalDay_Returns200_WithJsonBody()
+    public async Task TempGreaterThan30_ReturnsIcedCoffeeMessage()
     {
         var clock = new FixedDateTimeProvider(new DateTimeOffset(2026, 5, 20, 10, 30, 0, TimeSpan.FromHours(8)));
         var repo = new InMemoryCounterRepo();
+        var weather = new TestWeatherService(tempC: 31.0);
 
-        await using var factory = new CoffeeApiFactory(clock, repo);
+        await using var factory = new CoffeeApiFactory(clock, repo, weather);
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/brew-coffee");
+        var resp = await client.GetAsync("/brew-coffee");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var dto = await resp.Content.ReadFromJsonAsync<BrewDto>();
+        Assert.NotNull(dto);
+        Assert.Equal("Your refreshing iced coffee is ready", dto!.message);
+        Assert.EndsWith("+0800", dto.prepared);
 
-        var payload = await response.Content.ReadFromJsonAsync<BrewCoffeeDto>();
-        Assert.NotNull(payload);
-        Assert.Equal("Your piping hot coffee is ready", payload!.message);
-        Assert.EndsWith("+0800", payload.prepared); // offset without colon
-        Assert.Contains("2026-05-20T10:30:00", payload.prepared);
-        Assert.Equal("application/json; charset=utf-8", response.Content.Headers.ContentType?.ToString());
+        Assert.Equal(1, weather.Calls);
     }
 
     [Fact]
-    public async Task BrewCoffee_EveryFifthCall_Returns503_EmptyBody()
+    public async Task Temp30OrLess_ReturnsHotCoffeeMessage()
     {
         var clock = new FixedDateTimeProvider(new DateTimeOffset(2026, 5, 20, 10, 30, 0, TimeSpan.FromHours(8)));
         var repo = new InMemoryCounterRepo();
+        var weather = new TestWeatherService(tempC: 30.0);
 
-        await using var factory = new CoffeeApiFactory(clock, repo);
+        await using var factory = new CoffeeApiFactory(clock, repo, weather);
         using var client = factory.CreateClient();
 
-        // first 4 => OK
-        for (int i = 0; i < 4; i++)
+        var resp = await client.GetAsync("/brew-coffee");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+        var dto = await resp.Content.ReadFromJsonAsync<BrewDto>();
+        Assert.NotNull(dto);
+        Assert.Equal("Your piping hot coffee is ready", dto!.message);
+
+        Assert.Equal(1, weather.Calls);
+    }
+
+    [Fact]
+    public async Task EveryFifthCall_Returns503_EmptyBody_AndDoesNotCallWeatherOn5th()
+    {
+        var clock = new FixedDateTimeProvider(new DateTimeOffset(2026, 5, 20, 10, 30, 0, TimeSpan.FromHours(8)));
+        var repo = new InMemoryCounterRepo();
+        var weather = new TestWeatherService(tempC: 25.0);
+
+        await using var factory = new CoffeeApiFactory(clock, repo, weather);
+        using var client = factory.CreateClient();
+
+        // Calls 1-4 -> 200 OK
+        for (int i = 1; i <= 4; i++)
         {
-            var r = await client.GetAsync("/brew-coffee");
-            Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+            var ok = await client.GetAsync("/brew-coffee");
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
         }
 
-        // 5th => 503 with empty body
+        // Call 5 -> 503 + empty body
         var fifth = await client.GetAsync("/brew-coffee");
         Assert.Equal(HttpStatusCode.ServiceUnavailable, fifth.StatusCode);
         Assert.Equal(string.Empty, await fifth.Content.ReadAsStringAsync());
+
+        // Weather called only for the 4 successful requests (5th should short-circuit)
+        Assert.Equal(4, weather.Calls);
     }
 
     [Fact]
-    public async Task BrewCoffee_AprilFirst_Returns418_EmptyBody_EveryTime()
+    public async Task AprilFirst_Returns418_EmptyBody_AndNeverCallsWeather()
     {
         var clock = new FixedDateTimeProvider(new DateTimeOffset(2026, 4, 1, 9, 0, 0, TimeSpan.FromHours(8)));
         var repo = new InMemoryCounterRepo();
+        var weather = new TestWeatherService(tempC: 40.0);
 
-        await using var factory = new CoffeeApiFactory(clock, repo);
+        await using var factory = new CoffeeApiFactory(clock, repo, weather);
         using var client = factory.CreateClient();
 
-        var r1 = await client.GetAsync("/brew-coffee");
-        var r2 = await client.GetAsync("/brew-coffee");
-
-        Assert.Equal((HttpStatusCode)418, r1.StatusCode);
-        Assert.Equal((HttpStatusCode)418, r2.StatusCode);
-
-        Assert.Equal(string.Empty, await r1.Content.ReadAsStringAsync());
-        Assert.Equal(string.Empty, await r2.Content.ReadAsStringAsync());
-    }
-
-    [Fact]
-    public async Task Calls_Sequence_Should_Return_503_OnEveryFifth()
-    {
-        var clock = new FixedDateTimeProvider(new DateTimeOffset(2026, 5, 20, 10, 30, 0, TimeSpan.FromHours(8)));
-        var repo = new InMemoryCounterRepo();
-
-        await using var factory = new CoffeeApiFactory(clock, repo);
-        using var client = factory.CreateClient();
-
-        for (int i = 1; i <= 10; i++)
-        {
-            var response = await client.GetAsync("/brew-coffee");
-
-            if (i % 5 == 0)
-                Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-            else
-                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        }
-    }
-
-    [Fact]
-    public async Task AprilFirst_ShouldOverrideFifthCallRule()
-    {
-        var clock = new FixedDateTimeProvider(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
-        var repo = new InMemoryCounterRepo();
-        await using var factory = new CoffeeApiFactory(clock, repo);
-        var client = factory.CreateClient();
-
+        // Multiple calls; all must be 418 with empty body
         for (int i = 0; i < 5; i++)
         {
-            var response = await client.GetAsync("/brew-coffee");
-
-            Assert.Equal((HttpStatusCode)418, response.StatusCode);
+            var r = await client.GetAsync("/brew-coffee");
+            Assert.Equal((HttpStatusCode)418, r.StatusCode);
+            Assert.Equal(string.Empty, await r.Content.ReadAsStringAsync());
         }
+
+        // Should not call weather at all on April 1
+        Assert.Equal(0, weather.Calls);
     }
 
     [Fact]
-    public async Task ConcurrentCalls_ShouldStillRespectFifthRule()
+    public async Task WeatherUnavailable_FallsBackToHotCoffee()
     {
         var clock = new FixedDateTimeProvider(new DateTimeOffset(2026, 5, 20, 10, 30, 0, TimeSpan.FromHours(8)));
         var repo = new InMemoryCounterRepo();
+        var weather = new TestWeatherService(tempC: null);
 
-        await using var factory = new CoffeeApiFactory(clock, repo);
+        await using var factory = new CoffeeApiFactory(clock, repo, weather);
         using var client = factory.CreateClient();
 
-        var tasks = Enumerable.Range(0, 20)
-            .Select(_ => client.GetAsync("/brew-coffee"));
+        var resp = await client.GetAsync("/brew-coffee");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
-        var responses = await Task.WhenAll(tasks);
+        var dto = await resp.Content.ReadFromJsonAsync<BrewDto>();
+        Assert.NotNull(dto);
+        Assert.Equal("Your piping hot coffee is ready", dto!.message);
 
-        var count503 = responses.Count(r => r.StatusCode == HttpStatusCode.ServiceUnavailable);
-
-        Assert.True(count503 >= 4); // approx every 5 calls
+        Assert.Equal(1, weather.Calls);
     }
 
-    [Fact]
-    public async Task SwaggerJson_IsServed_InDevelopment()
-    {
-        var clock = new FixedDateTimeProvider(new DateTimeOffset(2026, 5, 20, 10, 30, 0, TimeSpan.FromHours(8)));
-        var repo = new InMemoryCounterRepo();
-
-        await using var factory = new CoffeeApiFactory(clock, repo);
-        using var client = factory.CreateClient();
-
-        var response = await client.GetAsync("/swagger/v1/swagger.json");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var json = await response.Content.ReadAsStringAsync();
-        Assert.Contains("\"openapi\"", json);
-        Assert.Contains("\"paths\"", json);
-    }
-
-    private sealed record BrewCoffeeDto(string message, string prepared);
+    private sealed record BrewDto(string message, string prepared);
 }

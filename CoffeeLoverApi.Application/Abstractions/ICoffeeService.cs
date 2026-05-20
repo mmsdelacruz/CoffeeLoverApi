@@ -2,10 +2,8 @@
 
 namespace CoffeeLoverApi.Application.Abstractions
 {
-
     public interface ICoffeeService
     {
-        BrewResult BrewCoffee();
+        Task<BrewResult> BrewCoffeeAsync(CancellationToken ct = default);
     }
-
 }

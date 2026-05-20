@@ -2,40 +2,32 @@
 using CoffeeLoverApi.Domain;
 using Microsoft.AspNetCore.Mvc;
 
-namespace CoffeeLoverApi.Controllers
+namespace CoffeeLoverApi.Api.Controllers;
+
+[ApiController]
+public sealed class CoffeeController : ControllerBase
 {
-    [ApiController]
-    [Route("[controller]")]
-    public class CoffeeController : ControllerBase
+    private readonly ICoffeeService _coffeeService;
+
+    public CoffeeController(ICoffeeService coffeeService) => _coffeeService = coffeeService;
+
+    [HttpGet("/brew-coffee")]
+    public async Task<IActionResult> BrewCoffee(CancellationToken ct)
     {
+        var result = await _coffeeService.BrewCoffeeAsync(ct);
 
-        private readonly ICoffeeService _coffeeService;
-
-        public CoffeeController(ICoffeeService coffeeService)
-            => _coffeeService = coffeeService;
-
-        [HttpGet("/brew-coffee")]
-        public IActionResult BrewCoffee()
+        return result.Outcome switch
         {
-            var result = _coffeeService.BrewCoffee();
+            BrewOutcome.Teapot => EmptyStatus(StatusCodes.Status418ImATeapot),
+            BrewOutcome.OutOfCoffee => EmptyStatus(StatusCodes.Status503ServiceUnavailable),
+            BrewOutcome.Ok => Ok(result.Response),
+            _ => EmptyStatus(StatusCodes.Status500InternalServerError)
+        };
+    }
 
-            switch (result.Outcome)
-            {
-                case BrewOutcome.Teapot:
-                    HttpContext.Response.StatusCode = StatusCodes.Status418ImATeapot;
-                    return new EmptyResult();
-
-                case BrewOutcome.OutOfCoffee:
-                    HttpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                    return new EmptyResult();
-
-                case BrewOutcome.Ok:
-                    return Ok(result.Response);
-
-                default:
-                    HttpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                    return new EmptyResult();
-            }
-        }
+    private IActionResult EmptyStatus(int statusCode)
+    {
+        HttpContext.Response.StatusCode = statusCode;
+        return new EmptyResult();
     }
 }

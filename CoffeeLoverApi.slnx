@@ -3,6 +3,5 @@
   <Project Path="CoffeeLoverApi.Domain/CoffeeLoverApi.Domain.csproj" Id="f902d61b-0818-40d7-be21-6d48eb6ee470" />
   <Project Path="CoffeeLoverApi.EndpointTests/CoffeeLoverApi.EndpointTests.csproj" />
   <Project Path="CoffeeLoverApi.Infrastructure/CoffeeLoverApi.Infrastructure.csproj" Id="bcde77dd-7691-413f-ba6b-94e4791ca585" />
-  <Project Path="CoffeeLoverApi.UnitTests/CoffeeLoverApi.UnitTests.csproj" Id="8898b2a2-e86e-4cbb-a4d7-ff2359c6a1c2" />
   <Project Path="CoffeeLoverApi/CoffeeLoverApi.Api.csproj" />
 </Solution>

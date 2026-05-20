@@ -1,48 +1,50 @@
 ﻿using CoffeeLoverApi.Application.Abstractions;
 using CoffeeLoverApi.Domain;
 
-namespace CoffeeLoverApi.Application.Services
+namespace CoffeeLoverApi.Application.Services;
+
+public sealed class CoffeeService : ICoffeeService
 {
+    private readonly IDateTimeProvider _clock;
+    private readonly ICoffeeMachineRepository _repo;
+    private readonly IWeatherService _weather;
 
-    public sealed class CoffeeService : ICoffeeService
+    public CoffeeService(IDateTimeProvider clock, ICoffeeMachineRepository repo, IWeatherService weather)
     {
-        private readonly IDateTimeProvider _clock;
-        private readonly ICoffeeMachineRepository _repo;
+        _clock = clock;
+        _repo = repo;
+        _weather = weather;
+    }
 
-        public CoffeeService(IDateTimeProvider clock, ICoffeeMachineRepository repo)
-        {
-            _clock = clock;
-            _repo = repo;
-        }
+    public async Task<BrewResult> BrewCoffeeAsync(CancellationToken ct = default)
+    {
+        var now = _clock.Now();
 
-        public BrewResult BrewCoffee()
-        {
-            var now = _clock.Now();
+        // #3: April 1st => 418, empty body
+        if (now.Month == 4 && now.Day == 1)
+            return new BrewResult(BrewOutcome.Teapot);
 
-            // 3) April 1st => always 418 (empty body)
-            if (now.Month == 4 && now.Day == 1)
-                return new BrewResult(BrewOutcome.Teapot);
+        // #2: Every fifth call => 503, empty body
+        var callNumber = _repo.IncrementAndGetBrewCount();
+        if (callNumber % 5 == 0)
+            return new BrewResult(BrewOutcome.OutOfCoffee);
 
-            // 2) Every fifth call => 503 (empty body)
-            var callNumber = _repo.IncrementAndGetBrewCount();
-            if (callNumber % 5 == 0)
-                return new BrewResult(BrewOutcome.OutOfCoffee);
+        // #1: Otherwise 200 with JSON, but message depends on temperature > 30°C
+        var tempC = await _weather.GetCurrentTemperatureCAsync(ct);
+        var message = (tempC is not null && tempC > 30.0)
+            ? "Your refreshing iced coffee is ready"
+            : "Your piping hot coffee is ready";
 
-            // 1) Otherwise => 200 with JSON
-            var prepared = ToIso8601BasicOffset(now);
-            var response = new BrewCoffeeResponse(
-                Message: "Your piping hot coffee is ready",
-                Prepared: prepared
-            );
+        return new BrewResult(
+            BrewOutcome.Ok,
+            new BrewCoffeeResponse(message, ToIso8601BasicOffset(now))
+        );
+    }
 
-            return new BrewResult(BrewOutcome.Ok, response);
-        }
-
-        private static string ToIso8601BasicOffset(DateTimeOffset dto)
-        {
-            // Produces e.g. "2026-05-20T14:56:24+0800" (no colon in offset)
-            var s = dto.ToString("yyyy-MM-dd'T'HH:mm:sszzz"); // +08:00
-            return s[..^3] + s[^2..];                         // +0800
-        }
+    private static string ToIso8601BasicOffset(DateTimeOffset dto)
+    {
+        // "2026-05-20T10:30:00+08:00" -> "2026-05-20T10:30:00+0800"
+        var s = dto.ToString("yyyy-MM-dd'T'HH:mm:sszzz");
+        return s[..^3] + s[^2..];
     }
 }

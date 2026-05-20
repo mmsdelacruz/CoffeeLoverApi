@@ -6,25 +6,21 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-// Swagger services (Swashbuckle)
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
+// existing DI
 builder.Services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
 builder.Services.AddSingleton<ICoffeeMachineRepository, InMemoryCoffeeMachineRepository>();
 builder.Services.AddScoped<ICoffeeService, CoffeeService>();
 
-var app = builder.Build();
-
-// Swagger middleware (only in Development is a common pattern)
-if (app.Environment.IsDevelopment())
+// Weather configuration + typed HttpClient
+builder.Services.Configure<OpenWeatherOptions>(builder.Configuration.GetSection("OpenWeather"));
+builder.Services.AddHttpClient<IWeatherService, OpenWeatherService>(client =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    client.BaseAddress = new Uri("https://api.openweathermap.org/data/2.5/");
+    client.Timeout = TimeSpan.FromSeconds(3);
+});
 
+var app = builder.Build();
 app.MapControllers();
 app.Run();
 
-// Required for WebApplicationFactory discovery with top-level Program.cs
 public partial class Program { }
