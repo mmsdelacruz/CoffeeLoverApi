@@ -1,23 +1,30 @@
+using CoffeeLoverApi.Application.Abstractions;
+using CoffeeLoverApi.Application.Services;
+using CoffeeLoverApi.Infrastructure;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+
+// Swagger services (Swashbuckle)
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+builder.Services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
+builder.Services.AddSingleton<ICoffeeMachineRepository, InMemoryCoffeeMachineRepository>();
+builder.Services.AddScoped<ICoffeeService, CoffeeService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Swagger middleware (only in Development is a common pattern)
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
-
-app.UseAuthorization();
-
 app.MapControllers();
-
 app.Run();
+
+// Required for WebApplicationFactory discovery with top-level Program.cs
+public partial class Program { }
